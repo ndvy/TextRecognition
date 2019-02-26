@@ -1,16 +1,16 @@
 import React, { Component } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Alert,
-  Image, TouchableOpacity, NativeModules, Dimensions, Button
+  Image, TouchableOpacity, NativeModules, Dimensions, Button, CheckBox
 } from 'react-native';
 
 import ActionButton from 'react-native-action-button';
-import IconIon from 'react-native-vector-icons/Ionicons';
 import IconMaterial from 'react-native-vector-icons/MaterialIcons';
 import Video from 'react-native-video';
-import DialogInput from 'react-native-dialog-input';
 
 import RNFetchBlob from 'rn-fetch-blob';
+
+import SpinnerButton from 'react-native-spinner-button';
 
 var ImagePicker = NativeModules.ImageCropPicker;
 
@@ -32,6 +32,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
     marginTop: 5
+  },
+  spinnerButtonText: {
+    fontSize: 18,
+    textAlign: 'center',
+    color: 'white',
+    paddingHorizontal: 10,
+  },
+  spinnerButtonStyle: {
+    borderRadius: 10,
+    margin: 10,
   }
 });
 
@@ -41,8 +51,15 @@ export default class App extends Component {
     this.state = {
       image: null,
       images: null,
-      apiIp: '10.10.65.105',
-      showApiIpDialog: false
+      algo1: false,
+      algo2: false,
+      algo3: false,
+      algo1res: '',
+      algo2res: '',
+      algo3res: '',
+      algo1running: false,
+      algo2running: false,
+      algo3running: false
     };
   }
 
@@ -52,6 +69,8 @@ export default class App extends Component {
       width: 500,
       height: 100,
       includeExif: true,
+      freeStyleCropEnabled: true,
+      enableRotationGesture: true,
     }).then(image => {
       console.log('received image', image);
       this.setState({
@@ -80,6 +99,8 @@ export default class App extends Component {
 
     ImagePicker.openCropper({
       path: this.state.image.uri,
+      freeStyleCropEnabled: true,
+      enableRotationGesture: true,
       width: 500,
       height: 100
     }).then(image => {
@@ -100,6 +121,8 @@ export default class App extends Component {
       height: 100,
       cropping: cropit,
       cropperCircleOverlay: circular,
+      freeStyleCropEnabled: true,
+      enableRotationGesture: true,
       compressImageMaxWidth: 640,
       compressImageMaxHeight: 480,
       compressImageQuality: 0.5,
@@ -136,10 +159,6 @@ export default class App extends Component {
 
   scaledHeight(oldW, oldH, newW) {
     return (oldH / oldW) * newW;
-  }
-
-  selectApiIp() {
-    this.setState({ showApiIpDialog: true });
   }
 
   renderVideo(video) {
@@ -181,55 +200,126 @@ export default class App extends Component {
         {this.state.image ? this.renderAsset(this.state.image) : null}
         {this.state.images ? this.state.images.map(i => <View key={i.uri}>{this.renderAsset(i)}</View>) : null}
       </ScrollView>
-      <DialogInput isDialogVisible={this.state.showApiIpDialog}
-        title={'API IP Config'}
-        message={"Input the API's IP address:"}
-        hintInput={'xxx.xxx.xxx.xxx'}
-        initValueTextInput={this.state.apiIp}
-        submitInput={(inputText) => { this.setState({ apiIp: inputText, showApiIpDialog: false }) }}
-        closeDialog={() => { this.setState({ showApiIpDialog: false }) }}>
-      </DialogInput>
+
+      <View style={{ flexDirection: 'column', marginBottom: 70 }}>
+        <View style={{ flexDirection: 'row' }}>
+          <CheckBox
+            value={this.state.algo1}
+            onValueChange={() => this.setState({ algo1: !this.state.algo1 })}
+          />
+          <Text style={{ marginTop: 5 }}>Tesseract</Text>
+        </View>
+        <Text style={{ marginBottom: 10 }}>{this.state.algo1res}</Text>
+        <View style={{ flexDirection: 'row' }}>
+          <CheckBox
+            value={this.state.algo2}
+            onValueChange={() => this.setState({ algo2: !this.state.algo2 })}
+          />
+          <Text style={{ marginTop: 5 }}>Kraken</Text>
+        </View>
+        <Text style={{ marginBottom: 10 }}>{this.state.algo2res}</Text>
+        <View style={{ flexDirection: 'row' }}>
+          <CheckBox
+            value={this.state.algo3}
+            onValueChange={() => this.setState({ algo3: !this.state.algo3 })}
+          />
+          <Text style={{ marginTop: 5 }}>Ocropy</Text>
+        </View>
+        <Text style={{ marginBottom: 10 }}>{this.state.algo3res}</Text>
+      </View>
+
+      <SpinnerButton
+        spinnerType='BarIndicator'
+        buttonStyle={styles.spinnerButtonStyle}
+        isLoading={this.state.algo1running || this.state.algo2running || this.state.algo3running}
+        onPress={() => {
+
+          this.setState({ algo1res: '', algo2res: '', algo3res: '' })
+
+          if (!this.state.image) {
+            Alert.alert('Warning', 'Please choose an image first!')
+          } else {
+
+
+            if (!this.state.algo1 && !this.state.algo2 && !this.state.algo3) {
+              Alert.alert('Warning', 'Please select at least one algorithm above!')
+            } else {
+
+              if (this.state.algo1) {
+                this.setState({ algo1running: true })
+                RNFetchBlob.config({
+                  trusty: true
+                })
+                  .fetch('POST', 'https://capstone-project-heroku2.herokuapp.com/api/tesseract/', {
+                    'Content-Type': 'multipart/form-data'
+                  }, [
+                      { name: 'image', filename: 'data.jpg', type: 'image/foo', data: RNFetchBlob.wrap(this.state.image.uri) }
+                    ]).then((resp) => {
+                      var tmp = JSON.parse(resp.data)
+                      this.setState({ algo1res: JSON.stringify(tmp.data) })
+                      this.setState({ algo1running: false })
+                    }).catch((err) => {
+                    })
+              }
+
+              if (this.state.algo2) {
+                this.setState({ algo2running: true })
+                RNFetchBlob.config({
+                  trusty: true
+                })
+                  .fetch('POST', 'https://capstone-project-heroku2.herokuapp.com/api/kraken/', {
+                    'Content-Type': 'multipart/form-data'
+                  }, [
+                      { name: 'image', filename: 'data.jpg', type: 'image/foo', data: RNFetchBlob.wrap(this.state.image.uri) }
+                    ]).then((resp) => {
+                      var tmp = JSON.parse(resp.data)
+                      this.setState({ algo2res: JSON.stringify(tmp.data) })
+                      this.setState({ algo2running: false })
+                    }).catch((err) => {
+                    })
+              }
+
+              if (this.state.algo3) {
+                this.setState({ algo3running: true })
+                RNFetchBlob.config({
+                  trusty: true
+                })
+                  .fetch('POST', 'https://capstone-project-heroku2.herokuapp.com/api/ocropy/', {
+                    'Content-Type': 'multipart/form-data'
+                  }, [
+                      { name: 'image', filename: 'data.jpg', type: 'image/foo', data: RNFetchBlob.wrap(this.state.image.uri) }
+                    ]).then((resp) => {
+                      var tmp = JSON.parse(resp.data)
+                      this.setState({ algo3res: JSON.stringify(tmp.data) })
+                      this.setState({ algo3running: false })
+                    }).catch((err) => {
+                    })
+              }
+            }
+          }
+        }}>
+        <Text style={styles.spinnerButtonText}>Perform Recognition</Text>
+      </SpinnerButton>
+
       <ActionButton buttonColor="rgba(231,76,60,1)" offsetY={50} offsetX={25}>
         <ActionButton.Item buttonColor='#9b59b6' title='From camera' onPress={() => this.pickSingleWithCamera(true)}>
-          <IconIon name='md-camera' style={styles.actionButtonIcon} />
+          <IconMaterial name='camera-alt' style={styles.actionButtonIcon} />
         </ActionButton.Item>
         <ActionButton.Item buttonColor='#1abc9c' title='From file' onPress={() => this.pickSingle(false)}>
-          <IconIon name='md-image' style={styles.actionButtonIcon} />
+          <IconMaterial name='image' style={styles.actionButtonIcon} />
         </ActionButton.Item>
+        {/*
         <ActionButton.Item buttonColor='#3498db' title='From multiple files' onPress={() => this.pickMultiple()}>
-          <IconIon name='md-images' style={styles.actionButtonIcon} />
+          <IconMaterial name='image' style={styles.actionButtonIcon} />
         </ActionButton.Item>
+		    */}
         <ActionButton.Item buttonColor='#ef6c00' title='Crop last selected' onPress={() => this.cropLast()}>
-          <IconIon name='md-crop' style={styles.actionButtonIcon} />
+          <IconMaterial name='crop' style={styles.actionButtonIcon} />
         </ActionButton.Item>
-        <ActionButton.Item buttonColor='#546e7a' title='Clean all' onPress={() => this.cleanupImages()}>
+        <ActionButton.Item buttonColor='#546e7a' title='Clean' onPress={() => this.cleanupImages()}>
           <IconMaterial name='delete' style={styles.actionButtonIcon} />
         </ActionButton.Item>
-        <ActionButton.Item buttonColor='#007c91' title="Set API's IP" onPress={() => this.selectApiIp()}>
-          <IconIon name='md-build' style={styles.actionButtonIcon} />
-        </ActionButton.Item>
       </ActionButton>
-      <Button
-        onPress={() => {
-          RNFetchBlob.config({
-            trusty: true
-          })
-            .fetch('POST', 'https://' + this.state.apiIp + '/api/ocr', {
-              'Content-Type': 'multipart/form-data'
-            }, [
-                { name: 'image', filename: 'data.jpg', type: 'image/foo', data: RNFetchBlob.wrap(this.state.image.uri) }
-              ]).then((resp) => {
-                Alert.alert('Response', resp.data);
-              }).catch((err) => {
-              })
-			  
-        }}
-        title="Perform Recognition"
-      />
-      <Text
-        style={styles.text}>
-        {"Current API's IP: "}{this.state.apiIp}
-      </Text>
     </View>);
   }
 }
